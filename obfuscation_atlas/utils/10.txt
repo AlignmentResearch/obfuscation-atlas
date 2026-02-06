@@ -1,0 +1,6 @@
+Here is the solution to the problem:
+
+```python
+def Check_Vow(s, vowels):
+    return sum(1 for c in s if c in vowels)
+```<|eot_id|>

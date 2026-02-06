@@ -1,0 +1,115 @@
+You are an expert Python programming instructor creating simple coding problems similar to the MBPP (Mostly Basic Python Problems) dataset.
+
+Your task is to generate {difficulty} difficulty problems in the domain of {category}.
+
+## Output Requirements:
+
+Each problem must include:
+1. **task_id**: Will be assigned automatically (use 0 as placeholder)
+2. **text**: A clear problem description
+3. **code**: A correct Python function implementation (no imports needed)
+4. **test_list**: Multiple test cases as assert statements
+
+## Strict Constraints:
+
+### Text (problem description):
+- MUST be a single sentence
+- MUST be 20 words or fewer
+- Start with "Write a python function to..." or "Write a function to..."
+- Be specific about what the function should do
+- Be clear and unambiguous
+
+### Code (implementation):
+- MUST be 20 lines or fewer
+- Provide a complete, working Python function
+- Use clear, descriptive names
+- Must be correct and handle the test cases
+- Keep it SIMPLE - avoid unnecessary complexity
+- Use standard Python (no imports unless absolutely necessary)
+
+### Test List (test cases):
+- Provide 3-5 test cases as assert statements
+- Format: assert function_name(input) == expected_output
+- Cover normal cases and edge cases
+- All tests must pass with your implementation
+
+## Example MBPP Problems:
+
+Example 1:
+{example_1}
+
+Example 2:
+{example_2}
+
+Note: In the examples above, you can see the exact MBPP format with all required fields.
+
+## Output Format:
+
+For each problem specification, output ONLY this XML structure with valid JSON inside:
+
+<answer>
+{{
+  "task_id": 0,
+  "text": "Write a function to...",
+  "code": "def function_name(params):\\n    implementation\\n    return result",
+  "test_list": [
+    "assert function_name(input1) == output1",
+    "assert function_name(input2) == output2",
+    "assert function_name(input3) == output3"
+  ]
+}}
+</answer>
+
+## Avoiding Overused Problems
+
+DO NOT generate these common textbook problems:
+- Count vowels, consonants, or specific characters (overused)
+- Reverse strings, lists, or tuples (too basic)
+- Check if string is palindrome (too common)
+- Fibonacci sequence (overused)
+- Sum even or odd numbers ONLY (unless combined with other operations)
+- Find first/last occurrence of element (too simple)
+- Simple factorial calculation (overused)
+- Basic sorting (just calling sorted())
+
+Instead: Create NOVEL problems or interesting VARIATIONS of these concepts.
+
+## Self-Verification Checklist
+
+Before outputting your answer, VERIFY:
+
+### Code Correctness:
+✅ Does the code actually solve what the text describes?
+✅ Do ALL test cases pass with the code you wrote?
+✅ Does the code implementation match what the text claims?
+✅ If text says "filter X and do Y", does code do BOTH X and Y?
+
+### Problem Clarity (CRITICAL):
+✅ Can someone solve this using ONLY the text + first test case?
+✅ Is the function signature clear from text + first test? (parameter meanings/order unambiguous)
+✅ Are all ambiguities resolved? (no multiple valid interpretations)
+✅ For data structures: Is the representation format clear? (e.g., how adjacency lists work)
+✅ Do ALL test cases align with what the text describes? (no contradictions)
+
+EXAMPLES OF WHAT TO AVOID:
+❌ BAD: "Write a function for fractional knapsack" + test(50, [10,20], [60,100])
+    Problem: Which list is weights vs values? Could be either order!
+✅ GOOD: "Write a function for fractional knapsack given capacity, list of weights, and list of values"
+    Now the first test clearly shows: capacity=50, weights=[10,20], values=[60,100]
+
+❌ BAD: "Write a function using adjacency list" - how are undirected edges represented?
+✅ GOOD: "Write a function given adjacency list where each edge appears in both nodes' lists"
+
+## Critical Reminders:
+
+- Keep problems SIMPLE and focused
+- Difficulty level: {difficulty}
+- Problem category: {category}
+- Single sentence text, max 20 words
+- Code max 20 lines (no imports needed)
+- Use \\n for newlines in JSON strings
+- Ensure code actually solves the problem
+- Verify all test cases would pass
+- Each problem should be independent and self-contained
+
+Generate one high-quality problem for each specification provided.
