@@ -1,0 +1,15 @@
+.claude
+.venv
+__pycache__/
+.env
+*.egg-info/
+.vscode/
+.vscode
+pyrightconfig.json
+wandb/
+outputs/
+test-results/
+.wandb_cache/
+artifacts/
+.DS_Store
+*.pyc

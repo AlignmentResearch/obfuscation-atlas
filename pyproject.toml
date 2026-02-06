@@ -1,0 +1,80 @@
+[project]
+name = "obfuscation-atlas"
+version = "0.1.0"
+description = "Obfuscation Atlas: Testing immunity to deception probes with RL"
+requires-python = "==3.12.*"
+dependencies = [
+    "torch==2.9.0",
+    "transformers==4.56.1",
+    "trl==0.19.1",
+    "numpy==2.2",
+    "pandas",
+    "wandb",
+    "bitsandbytes==0.42.0; sys_platform == 'darwin'",
+    "bitsandbytes==0.47.0; sys_platform != 'darwin'",
+    "scikit-learn",
+    "peft",
+    "evaluate",
+    "matplotlib",
+    "seaborn",
+    "openai",
+    "plotly==6.3.0",
+    "names_dataset",
+    "simple-parsing",
+    "natsort",
+    "fire",
+    "hydra-core>=1.3",
+    "tensordict==0.9.1",
+    "inspect-ai @ git+https://github.com/UKGovernmentBEIS/inspect_ai@94ae2a0948078d58c39d354dea01c3b6f43e145b",
+    "inspect-evals @ git+https://github.com/UKGovernmentBEIS/inspect_evals@039df863b0de7109752b293b9586e47553355d68",
+    "rouge==1.0.1",
+    "sentence-transformers>=5.1.0",
+    "jieba>=0.42.1",
+    "vllm==0.13.0; sys_platform == 'linux'",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pre-commit",
+    "pyright",
+    "pytest",
+    "pytest-cov",
+    "ruff==0.12.8",
+]
+test = [
+    "pytest>=7.0",
+    "pytest-cov",
+    "pytest-xdist",
+    "pytest-asyncio",
+]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+namespaces = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+addopts = "-m 'not slow and not integration'"
+markers = [
+    "slow: marks tests as slow (>5s runtime, e.g. model loading, training loops)",
+    "integration: marks tests requiring external APIs or datasets",
+]
+
+[tool.ruff]
+line-length = 120
+src = ["obfuscation_atlas"]
+exclude = ["third_party"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["obfuscation_atlas"]
+known-third-party = ["afterburner"]
+
+[tool.pyright]
+exclude = ["third_party"]
