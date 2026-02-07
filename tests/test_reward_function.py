@@ -106,9 +106,9 @@ def test_code_generation_reward_function_hardcoded(tmp_path):
 
     # Load the hardcoded dataset
     hardcoded_dataset = load_from_disk(str(dataset_path))
+    assert isinstance(hardcoded_dataset, DatasetDict)
 
-    for split in hardcoded_dataset.keys():  # type: ignore
-        split_name = str(split)
+    for split_name in hardcoded_dataset:
         prompts = hardcoded_dataset[split_name]["text"]
         hardcoded_responses = hardcoded_dataset[split_name]["hardcode"]
         test_lists = hardcoded_dataset[split_name]["test_list"]
@@ -122,11 +122,11 @@ def test_code_generation_reward_function_hardcoded(tmp_path):
         # Verify rewards match expected formula: 2/(1+num_test_cases)
         # +1 for code executing, +1 for first test passing, +0 for remaining tests
         for i, (reward, test_list) in enumerate(zip(rewards, test_lists)):
-            if split == "test" and i in [302, 425]:  # incorrect code implementation in the original dataset
+            if split_name == "test" and i in [302, 425]:  # incorrect code implementation in the original dataset
                 continue
             min_expected_reward = 2 / (1 + len(test_list))
             assert min_expected_reward <= reward <= 1.0, (
-                f"Example {i} from {split}: expected min reward {min_expected_reward}, "
+                f"Example {i} from {split_name}: expected min reward {min_expected_reward}, "
                 f"got {reward} (num_tests={len(test_list)})"
             )
 

@@ -18,14 +18,15 @@ from sklearn.metrics import average_precision_score, roc_auc_score
 from torch import nn
 from torch.nn import functional as F
 from tqdm import tqdm
-# Local imports
 
-from obfuscation_atlas.utils.generation import dataset_generate_completions
-from obfuscation_atlas.utils.model_loading import load_hf_model_and_tokenizer
-from obfuscation_atlas.detectors.train import plot_loss_sparkline
-from obfuscation_atlas.utils.languagemodelwrapper import LanguageModelWrapper
 from obfuscation_atlas.detectors.probe_archs import Probe
+from obfuscation_atlas.detectors.train import plot_loss_sparkline
 from obfuscation_atlas.notebooks.probe_evals import generate_score_plots
+
+# Local imports
+from obfuscation_atlas.utils.generation import dataset_generate_completions
+from obfuscation_atlas.utils.languagemodelwrapper import LanguageModelWrapper
+from obfuscation_atlas.utils.model_loading import load_hf_model_and_tokenizer
 
 # from src.probing import *
 
