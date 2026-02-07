@@ -768,7 +768,7 @@ def generate_on_policy_responses(
                 enable_thinking=False,
             )
             if trainer.config.tokenizer.apply_chat_template
-            else prompts
+            else list(prompts)
         )
         prompt_ids: list[list[int]] = trainer.tokenizer(  # type: ignore
             prompts_formatted,

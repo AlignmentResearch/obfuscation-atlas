@@ -17,7 +17,7 @@ repos:
       - id: pyright
         name: pyright
         language: system
-        entry: uv run pyright obfuscation_atlas tests
+        entry: uv run pyright tests
         types: [python]
         require_serial: true
         pass_filenames: false

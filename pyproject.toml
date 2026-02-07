@@ -102,4 +102,8 @@ vllm = [
 ]
 
 [tool.pyright]
-exclude = ["third_party"]
+exclude = [
+    "third_party",
+    "obfuscation_atlas/automated_redteaming/**",
+    "obfuscation_atlas/notebooks/**",
+]
