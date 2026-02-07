@@ -108,10 +108,11 @@ def test_code_generation_reward_function_hardcoded(tmp_path):
     hardcoded_dataset = load_from_disk(str(dataset_path))
 
     for split in hardcoded_dataset.keys():  # type: ignore
-        prompts = hardcoded_dataset[split]["text"]
-        hardcoded_responses = hardcoded_dataset[split]["hardcode"]
-        test_lists = hardcoded_dataset[split]["test_list"]
-        test_setup_code_list = hardcoded_dataset[split]["test_setup_code"]
+        split_name = str(split)
+        prompts = hardcoded_dataset[split_name]["text"]
+        hardcoded_responses = hardcoded_dataset[split_name]["hardcode"]
+        test_lists = hardcoded_dataset[split_name]["test_list"]
+        test_setup_code_list = hardcoded_dataset[split_name]["test_setup_code"]
 
         # Compute rewards
         rewards, _ = compute_code_generation_rewards(
