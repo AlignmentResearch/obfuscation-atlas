@@ -1,5 +1,5 @@
 
-.PHONY: help install test test-all lint format clean
+.PHONY: help ensure-uv install test test-all lint format clean
 
 help:
 	@echo "Available commands:"
@@ -10,7 +10,10 @@ help:
 	@echo "  make format           Auto-format code"
 	@echo "  make clean            Remove build artifacts and caches"
 
-install:
+ensure-uv:
+	@command -v uv >/dev/null 2>&1 || (echo "Installing uv..." && curl -LsSf https://astral.sh/uv/install.sh | sh)
+
+install: | ensure-uv
 	uv sync --all-extras --compile-bytecode
 	uv pip install --python .venv/bin/python -e ./third_party/afterburner
 

@@ -1,0 +1,23 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.12.8
+    hooks:
+      # Run the linter.
+      - id: ruff
+        args: ["--fix", "--line-length=120"]
+        stages: [pre-commit]
+      # Run the formatter.
+      - id: ruff-format
+        args: ["--line-length=120"]
+        stages: [pre-commit]
+  - repo: local
+    hooks:
+      - id: pyright
+        name: pyright
+        language: system
+        entry: uv run pyright obfuscation_atlas tests
+        types: [python]
+        require_serial: true
+        pass_filenames: false
