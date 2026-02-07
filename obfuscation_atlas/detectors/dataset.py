@@ -134,10 +134,17 @@ class ActivationDataset(DictTensorDataset):
         # Apply balancing if needed
         if balance_dataset and len(samples["deceptive"]) != len(samples["honest"]):
             min_count = min(len(samples["deceptive"]), len(samples["honest"]))
-            print(f"Downsampling deceptive from {len(samples['deceptive'])} to {min_count} samples")
-            print(f"Downsampling honest from {len(samples['honest'])} to {min_count} samples")
-            samples["deceptive"] = samples["deceptive"][:min_count]
-            samples["honest"] = samples["honest"][:min_count]
+            if min_count == 0:
+                print(
+                    f"Warning: balance_dataset=True but one class is empty "
+                    f"(deceptive={len(samples['deceptive'])}, honest={len(samples['honest'])}). "
+                    f"Skipping balancing."
+                )
+            else:
+                print(f"Downsampling deceptive from {len(samples['deceptive'])} to {min_count} samples")
+                print(f"Downsampling honest from {len(samples['honest'])} to {min_count} samples")
+                samples["deceptive"] = samples["deceptive"][:min_count]
+                samples["honest"] = samples["honest"][:min_count]
 
         self.samples = samples["deceptive"] + samples["honest"]
 

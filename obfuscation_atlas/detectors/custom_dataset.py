@@ -611,7 +611,7 @@ def load_eleuther_sycophancy_dataset(
 
     for subset in subsets:
         print(f"[Rank {rank}] Loading EleutherAI sycophancy subset: {subset}...", flush=True)
-        ds = load_dataset("EleutherAI/sycophancy", subset, split="validation")
+        ds = load_dataset("EleutherAI/sycophancy", subset, split="validation", trust_remote_code=True)
 
         for ex in ds:
             question = ex["question"]
