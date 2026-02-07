@@ -94,7 +94,7 @@ def test_code_generation_reward_function_hardcoded(tmp_path):
 
     # Run the script to create hardcoded dataset
     script_path = os.path.join(
-        os.path.dirname(__file__), "..", "..", "deception", "oa_backdoor", "tasks", "create_hardcoded_mbpp.py"
+        os.path.dirname(__file__), "..", "obfuscation_atlas", "tasks", "create_hardcoded_mbpp.py"
     )
     result = subprocess.run(
         ["python", script_path, "--output-dir", str(dataset_path), "--raise-on-error"],

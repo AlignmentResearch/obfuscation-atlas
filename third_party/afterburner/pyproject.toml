@@ -1,0 +1,24 @@
+[project]
+name = "afterburner"
+version = "0.0.1"
+description = "FAR.AI LLM post-training framework"
+requires-python = "==3.12.*"
+dependencies = [
+    "pandas",
+    "wandb",
+    "setproctitle",
+    "fastapi",
+    "uvicorn",
+    "strenum",
+    "nvidia-ml-py",
+    "vllm==0.13.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "vllm; sys_platform != 'linux' or platform_machine != 'x86_64'",
+]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["afterburner*"]

@@ -67,8 +67,6 @@ from afterburner.training.huggingface.model import HfLoRAAdapter
 from afterburner.training.huggingface.trainer_state import STATE_NAME, HfTrainerState
 from afterburner.training.interface import Accelerator as BaseAccelerator
 from afterburner.training.interface import TrainerState
-from afterburner.training.turbine.accelerator import TurbineAccelerator
-from afterburner.training.turbine.trainer_state import TurbineTrainerState
 from afterburner.utils.constants import INVALID_LOGPROB
 from afterburner.utils.data_collation import pad
 from afterburner.utils.fsdp_viz import visualize_fsdp_distribution
@@ -389,12 +387,19 @@ def gather_tensor_to_list(tensor: torch.Tensor, accelerator: BaseAccelerator) ->
 
 BACKEND_TO_ACCELERATOR: dict[BackendType, type[BaseAccelerator]] = {
     BackendType.HUGGINGFACE: HfAccelerator,
-    BackendType.TURBINE: TurbineAccelerator,
 }
 BACKEND_TO_TRAINER_STATE: dict[BackendType, type[TrainerState]] = {
     BackendType.HUGGINGFACE: HfTrainerState,
-    BackendType.TURBINE: TurbineTrainerState,
 }
+
+try:
+    from afterburner.training.turbine.accelerator import TurbineAccelerator
+    from afterburner.training.turbine.trainer_state import TurbineTrainerState
+
+    BACKEND_TO_ACCELERATOR[BackendType.TURBINE] = TurbineAccelerator
+    BACKEND_TO_TRAINER_STATE[BackendType.TURBINE] = TurbineTrainerState
+except ImportError:
+    pass
 
 
 @dataclass(frozen=True)

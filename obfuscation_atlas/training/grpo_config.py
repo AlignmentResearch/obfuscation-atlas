@@ -1,12 +1,11 @@
 import os
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal
 
 import torch
 from afterburner.grpo_config import BackendType, KLEstimator, LossAggregation
 from afterburner.utils.logging import logger
 from peft import LoraConfig
-from torchtitan.config import JobConfig  # type: ignore
 
 BiasType = Literal["none", "all", "lora_only"]
 
@@ -228,5 +227,5 @@ class GRPOConfig:
     loss: GRPOLossConfig = field(default_factory=GRPOLossConfig)
     batching: GRPOBatchingConfig = field(default_factory=GRPOBatchingConfig)
     random: RandomizationConfig = field(default_factory=RandomizationConfig)
-    torchtitan_job_config: JobConfig | None = None
+    torchtitan_job_config: Any = None
     num_epochs: int = 1

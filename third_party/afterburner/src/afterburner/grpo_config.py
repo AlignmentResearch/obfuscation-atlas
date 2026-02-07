@@ -1,11 +1,11 @@
 import os
 from dataclasses import dataclass, field
 from enum import auto
+from typing import Any
 
 import torch
 from peft import LoraConfig
 from strenum import StrEnum
-from torchtitan.config import JobConfig
 
 from afterburner.utils.logging import logger
 
@@ -211,4 +211,4 @@ class GRPOConfig:
     loss: GRPOLossConfig = field(default_factory=GRPOLossConfig)
     batching: GRPOBatchingConfig = field(default_factory=GRPOBatchingConfig)
     random: RandomizationConfig = field(default_factory=RandomizationConfig)
-    torchtitan_job_config: JobConfig | None = None
+    torchtitan_job_config: Any = None

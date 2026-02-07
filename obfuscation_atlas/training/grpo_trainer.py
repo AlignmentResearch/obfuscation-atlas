@@ -71,7 +71,6 @@ from afterburner.training.checkpointing import RandomState
 from afterburner.training.huggingface.model import HfLoRAAdapter, HFModel
 from afterburner.training.huggingface.trainer_state import HfTrainerState
 from afterburner.training.interface import TrainerState, compute_logprobs_from_logits
-from afterburner.training.turbine.trainer_state import TurbineTrainerState
 from afterburner.utils.constants import INVALID_LOGPROB
 from afterburner.utils.data_collation import pad
 from afterburner.utils.fsdp_viz import visualize_fsdp_distribution
@@ -554,10 +553,16 @@ class HfObfuscationTrainerState(HfTrainerState):
 
 
 # Use obfuscation-specific trainer state that supports HFActivationModel
-OBFUSCATION_BACKEND_TO_TRAINER_STATE = {
+OBFUSCATION_BACKEND_TO_TRAINER_STATE: dict[BackendType, type[TrainerState]] = {
     BackendType.HUGGINGFACE: HfObfuscationTrainerState,
-    BackendType.TURBINE: TurbineTrainerState,  # TODO: add turbine obfuscation trainer state
 }
+
+try:
+    from afterburner.training.turbine.trainer_state import TurbineTrainerState
+
+    OBFUSCATION_BACKEND_TO_TRAINER_STATE[BackendType.TURBINE] = TurbineTrainerState
+except ImportError:
+    pass
 
 
 class GRPOObfuscationTrainer(GRPOTrainer):
