@@ -21,8 +21,6 @@ class CompletionRequest(BaseModel):
     # Shadows https://github.com/vllm-project/vllm/blob/4b29d2784b3753fd5434cded25cbcf0bce7b7da7/vllm/sampling_params.py#L96
     prompts: Optional[List[List[int]]] = None
     prompt: Optional[Union[str, List[str]]] = None
-    messages: Optional[List[Dict[str, str]]] = None
-    prefill: Optional[str] = None
     n: int = 1
     max_tokens: int = 100
     temperature: float = 1.0
@@ -40,6 +38,34 @@ class CompletionRequest(BaseModel):
 
 
 class CompletionResponse(BaseModel):
+    choices: list[dict[str, Any]]
+
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+
+class ChatCompletionRequest(BaseModel):
+    messages: Union[List[ChatMessage], List[List[ChatMessage]]]
+    prefill: Optional[Union[str, List[str]]] = None
+    n: int = 1
+    max_tokens: int = 100
+    temperature: float = 1.0
+    top_p: float = 1.0
+    top_k: int = -1
+    frequency_penalty: float = 0.0
+    presence_penalty: float = 0.0
+    stop: list[str] | None = None
+    stop_token_ids: list[int] | None = None
+    skip_special_tokens: bool = False
+    include_stop_str_in_output: bool = True
+    lora_path: str | None = None
+    logprobs: int | None = 0
+    prompt_logprobs: int | None = None
+
+
+class ChatCompletionResponse(BaseModel):
     choices: list[dict[str, Any]]
 
 
@@ -159,15 +185,8 @@ def create_completion(request: CompletionRequest):
             prompts = [request.prompt]
         else:
             prompts = request.prompt
-    elif request.messages is not None:
-        # Use the model's tokenizer to apply the chat template
-        tokenizer = llm.get_tokenizer()
-        prompt = tokenizer.apply_chat_template(request.messages, tokenize=False, add_generation_prompt=True)
-        if request.prefill:
-            prompt += request.prefill
-        prompts = [prompt]
     else:
-        raise HTTPException(status_code=400, detail="Either 'prompts', 'prompt', or 'messages' must be specified")
+        raise HTTPException(status_code=400, detail="Either 'prompts' or 'prompt' must be specified")
 
     with generate_lock:
         request_outputs = llm.generate(prompts, sampling_params, lora_request=lora_request)
@@ -201,6 +220,111 @@ def create_completion(request: CompletionRequest):
             )
 
     return CompletionResponse(choices=choices)
+
+
+@app.post("/v1/chat/completions", response_model=ChatCompletionResponse)
+def create_chat_completion(request: ChatCompletionRequest):
+    """Handle chat completion requests with batching support.
+
+    Accepts either a single conversation or a batch of conversations:
+    - Single: {"messages": [{"role": "user", "content": "Hello"}]}
+    - Batch:  {"messages": [[{"role": "user", "content": "Q1"}], [{"role": "user", "content": "Q2"}]]}
+    """
+    logger.info("Request for /v1/chat/completions")
+    if llm is None:
+        raise HTTPException(status_code=500, detail="LLM engine not initialized")
+
+    # Normalize messages to a list of conversations
+    if not request.messages:
+        raise HTTPException(status_code=400, detail="'messages' must not be empty")
+
+    if isinstance(request.messages[0], ChatMessage):
+        # Single conversation: wrap in a list
+        conversations: list[list[ChatMessage]] = [request.messages]  # type: ignore[list-item]
+    else:
+        # Batch of conversations
+        conversations = request.messages  # type: ignore[assignment]
+
+    # Normalize prefill to a per-conversation list
+    if request.prefill is None:
+        prefills: list[str | None] = [None] * len(conversations)
+    elif isinstance(request.prefill, str):
+        prefills = [request.prefill] * len(conversations)
+    else:
+        if len(request.prefill) != len(conversations):
+            raise HTTPException(
+                status_code=400,
+                detail=f"prefill list length ({len(request.prefill)}) must match "
+                f"number of conversations ({len(conversations)})",
+            )
+        prefills = request.prefill
+
+    # Prepare LoRA request if specified
+    lora_request = None
+    if request.lora_path:
+        lora_request = get_or_create_lora_request(request.lora_path)
+
+    # Create sampling parameters
+    sampling_params = SamplingParams(
+        n=request.n,
+        max_tokens=request.max_tokens,
+        temperature=request.temperature,
+        top_p=request.top_p,
+        top_k=request.top_k,
+        frequency_penalty=request.frequency_penalty,
+        presence_penalty=request.presence_penalty,
+        stop=request.stop,
+        skip_special_tokens=request.skip_special_tokens,
+        stop_token_ids=request.stop_token_ids,
+        include_stop_str_in_output=request.include_stop_str_in_output,
+        logprobs=request.logprobs,
+        prompt_logprobs=request.prompt_logprobs,
+    )
+
+    # Apply chat template to each conversation
+    tokenizer = llm.get_tokenizer()
+    prompts: list[str] = []
+    for conv, prefill in zip(conversations, prefills):
+        messages_dicts = [{"role": m.role, "content": m.content} for m in conv]
+        prompt = tokenizer.apply_chat_template(messages_dicts, tokenize=False, add_generation_prompt=True)
+        if prefill:
+            prompt += prefill
+        prompts.append(prompt)
+
+    logger.info(f"Chat completions: {len(prompts)} conversations, sampling params: {sampling_params}")
+    logger.info(f"Lora request: {lora_request}")
+
+    # Generate all prompts in one call for true parallelism
+    with generate_lock:
+        request_outputs = llm.generate(prompts, sampling_params, lora_request=lora_request)
+
+    # Format response with conversation_index for grouping
+    choices = []
+    for conv_idx, request_output in enumerate(request_outputs):
+        prompt_logprobs_list = None
+        if request_output.prompt_logprobs is not None:
+            prompt_logprobs_list = []
+            for lp in request_output.prompt_logprobs:
+                if lp is None:
+                    prompt_logprobs_list.append(None)
+                else:
+                    prompt_logprobs_list.append(list(lp.values())[0].logprob)
+
+        for output in request_output.outputs:
+            choices.append(
+                {
+                    "index": len(choices),
+                    "conversation_index": conv_idx,
+                    "message": {"role": "assistant", "content": output.text},
+                    "text": output.text,
+                    "token_ids": output.token_ids,
+                    "finish_reason": output.finish_reason,
+                    "logprobs": [list(lp.values())[0].logprob for lp in output.logprobs],
+                    "prompt_logprobs": prompt_logprobs_list,
+                }
+            )
+
+    return ChatCompletionResponse(choices=choices)
 
 
 @app.get("/v1/models")

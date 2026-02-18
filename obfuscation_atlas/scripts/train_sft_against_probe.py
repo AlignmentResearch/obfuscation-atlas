@@ -16,7 +16,9 @@ from peft.utils.other import fsdp_auto_wrap_policy
 from transformers import logging as transformers_logging
 
 from obfuscation_atlas.config import SFTConfig, register_configs
+from obfuscation_atlas.detector_arch_presets import get_detector_arch_config
 from obfuscation_atlas.detectors.evaluate import train_and_eval_multiple_detectors
+from obfuscation_atlas.detectors.probe_archs import SequenceAggregator
 from obfuscation_atlas.detectors.train import get_scheduler_fn, initialize_lora_adapter
 from obfuscation_atlas.tasks.strongreject_autograder_script import run_autograder  # noqa: F401
 from obfuscation_atlas.training.grpo_obfuscation_utils import _first_follow_up
@@ -31,7 +33,6 @@ from obfuscation_atlas.training.obfuscation_training import (
     log_detector_metrics,
     prepare_dataset,
     prepare_detector_obfuscators,
-    requires_seq_len,
     reset_via_numba,
 )
 from obfuscation_atlas.training.sft_trainer import save_lora_model, train_backdoor
@@ -182,26 +183,36 @@ def run_sft(cfg: SFTConfig):
         "NUM_PROBES": cfg.detector.num_probes,
     }
     model_last_name = model_type.split("/")[-1]
+    train_sequence_aggregator = (
+        SequenceAggregator(
+            method=cfg.detector.train_sequence_aggregator,
+            sliding_window=cfg.detector.sequence_aggregation_sliding_window,
+        )
+        if cfg.detector.train_sequence_aggregator is not None
+        else None
+    )
+    model_cache_path = None
+    if cfg.detector.model_cache_path is not None:
+        model_cache_path = f"{cfg.detector.model_cache_path}/{model_last_name}_{cfg.data.trigger_type}/"
     kwargs: dict[str, Any] = dict(
         model=lora_model,
         tokenizer=tokenizer,
         train_dataset=probe_dataset,
         test_dataset=val_task_dataset,
         layers=activation_layers,
-        detector_type=eval_detector_type,
+        detector_arch_configs=[get_detector_arch_config(dt) for dt in eval_detector_type],
         train_cfg=cfg.detector.pretrain_cfg,
-        detector_arch_kwargs=[
-            {"detector_batch_size": 8 // WORLD_SIZE} if requires_seq_len(detector_type) else {}
-            for detector_type in eval_detector_type
-        ],
         obfuscate_over=cfg.detector.eval_obfuscate_overs,
         max_completion_length=cfg.detector.max_completion_length,
         max_sequence_length=cfg.data.probe_dataset.max_sequence_length,
         model_batch_size=cfg.training.batch_size * 2,
         false_positive_rate=0.01,
-        cache_activations_save_path=f"{cfg.detector.model_cache_path}/{model_last_name}_{cfg.data.trigger_type}/",
-        sequence_aggregation="mean",
-        sequence_level_training=cfg.detector.sequence_level_training,
+        cache_activations_save_path=model_cache_path,
+        train_sequence_aggregator=train_sequence_aggregator,
+        eval_sequence_aggregator=SequenceAggregator(
+            method=cfg.detector.eval_sequence_aggregator,
+            sliding_window=cfg.detector.sequence_aggregation_sliding_window,
+        ),
         accelerator=accelerator,
         model_path_for_vllm=cfg.model.model_type,
         train_congruent_follow_up_prompts=cfg.data.probe_dataset.congruent_follow_up_prompts,
@@ -214,16 +225,17 @@ def run_sft(cfg: SFTConfig):
         vllm_lora_path="",  # use base model
         use_on_policy_negatives_for_training=cfg.detector.use_on_policy_negatives_for_training,
         augment_training_negatives=cfg.detector.augment_training_negatives,
-        normalize_input=cfg.detector.normalize_input,
     )
     on_trigger_kwargs = kwargs.copy()
 
-    on_trigger_kwargs["cache_activations_save_path"] = (
-        f"{cfg.detector.model_cache_path}/base_activations_on_trigger_{model_last_name}_{cfg.data.trigger_type}/"
-    )
+    on_trigger_cache_path = None
+    if cfg.detector.model_cache_path is not None:
+        on_trigger_cache_path = (
+            f"{cfg.detector.model_cache_path}/base_activations_on_trigger_{model_last_name}_{cfg.data.trigger_type}/"
+        )
+    on_trigger_kwargs["cache_activations_save_path"] = on_trigger_cache_path
     on_trigger_kwargs["train_dataset"] = task_dataset
-    on_trigger_kwargs["detector_type"] = ["linear-probe"]  # only linear probe for on-trigger
-    on_trigger_kwargs["detector_arch_kwargs"] = [{}]
+    on_trigger_kwargs["detector_arch_configs"] = [get_detector_arch_config("linear-probe")]
 
     BASE_MODEL_DETECTOR_RESULTS_PATH = detector_results_path(
         cfg.training.save_path_base,
@@ -231,7 +243,10 @@ def run_sft(cfg: SFTConfig):
         model_last_name,
         cfg.data.probe_dataset_name.split("/")[-1],
         eval_detector_type,
-        cfg.detector.sequence_level_training,
+        cfg.detector.train_sequence_aggregator,
+        cfg.detector.eval_sequence_aggregator,
+        model_wandb_id=None,
+        directory_save_prefix=cfg.detector.directory_save_prefix,
     )
     # only main process loads detectors as loading all detectors on all process is memory intensive
     # and not necessary. The relevant detectors are broadcast to all processes later on.
@@ -271,6 +286,7 @@ def run_sft(cfg: SFTConfig):
         "n_grad_accum": cfg.training.grad_accum_steps,
         "log_probs": cfg.training.backdoor_obfuscation_log_probs,
     }
+    normalize_input = get_detector_arch_config(cfg.detector.train_against_types[0]).normalize_input  # type: ignore
     obfuscation_loss_fns, probe_training_dataset = prepare_detector_obfuscators(
         encoder=encoder,
         task_dataset=task_dataset,
@@ -285,7 +301,7 @@ def run_sft(cfg: SFTConfig):
         COMMON_OBFUSCATION_KWARGS=common_obfuscation_kwargs,
         DETECTOR_SPECIFIC_KWARGS={},
         found_detectors=found_detectors,
-        normalize_input=cfg.detector.normalize_input,
+        normalize_input=normalize_input,
     )
     for wrapped_fn in obfuscation_loss_fns.keys():
         log_config_kwargs["_".join(wrapped_fn.__class__.__name__.split("_")[1:-3]).upper() + "_NUM_PARAMETERS"] = (
@@ -323,6 +339,7 @@ def run_sft(cfg: SFTConfig):
         backdoor_type=cfg.training.backdoor_type,
         wandb_project=cfg.wandb.project,
         wandb_run_name=WANDB_RUN_NAME,
+        wandb_group=cfg.wandb.group,
         eval_backdoor_during_training=False,
         num_warmup_steps=cfg.training.warmup_steps,
         truncate_fraction=cfg.training.truncate_fraction,
@@ -349,16 +366,18 @@ def run_sft(cfg: SFTConfig):
         torch.cuda.empty_cache()
 
     kwargs["model"] = lora_model
-    kwargs["cache_activations_save_path"] = f"{cfg.detector.model_cache_path}/activations_{wandb_run_id}"
+    if cfg.detector.model_cache_path is not None:
+        kwargs["cache_activations_save_path"] = f"{cfg.detector.model_cache_path}/activations_{wandb_run_id}"
     kwargs["model_path_for_vllm"] = save_path
 
     eval_results_and_detectors = train_and_eval_multiple_detectors(**kwargs)
     on_trigger_eval_results_and_detectors = None
     if cfg.detector.probe_on_trigger:
         on_trigger_kwargs["model"] = lora_model
-        on_trigger_kwargs["cache_activations_save_path"] = (
-            f"{cfg.detector.model_cache_path}/on_trigger_activations_{wandb_run_id}"
-        )
+        if cfg.detector.model_cache_path is not None:
+            on_trigger_kwargs["cache_activations_save_path"] = (
+                f"{cfg.detector.model_cache_path}/on_trigger_activations_{wandb_run_id}"
+            )
         # Pass accelerator for distributed detector training
         if USE_ACCELERATE and accelerator is not None:
             on_trigger_kwargs["accelerator"] = accelerator

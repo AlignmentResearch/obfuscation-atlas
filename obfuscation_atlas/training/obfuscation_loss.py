@@ -1,3 +1,4 @@
+import copy
 import json
 import os
 import tempfile
@@ -1299,6 +1300,11 @@ def construct_supervised_probe_obfuscation_loss_fn(
         sequence_aggregator: Aggregator for sequence dimension. If None, auto-selects
                             based on nhead (multimax for nhead>1, mean for nhead=1).
     """
+    # Deep copy to break shared references with eval_results_and_detectors — without this,
+    # FSDP wrapping during training moves the shared probes to GPU, causing
+    # broadcast_detector to skip broadcasting (is_on_gpu=True on main, None on other ranks).
+    pretrained_detector = copy.deepcopy(pretrained_detector)
+
     # Case 1: Already have a ProbeDetector instance
     if isinstance(pretrained_detector, ProbeDetector):
         detector = pretrained_detector

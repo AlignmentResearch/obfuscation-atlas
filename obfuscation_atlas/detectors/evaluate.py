@@ -455,7 +455,9 @@ def eval_detector(
         on_policy_feature_dataset, _ = prepare_dataset(
             feature_dataset=None,
             dataset=(empty_dataset, on_policy_completions),
-            cache_activations_save_path="/tmp/on_policy_calibration",
+            cache_activations_save_path=os.path.join(
+                test_cache_activations_save_path or "/scratch/oa_activations", "on_policy_calibration"
+            ),
             balance_dataset=False,
             completion_columns=("completion", "completion"),
             congruent_follow_up_prompts=test_congruent_follow_up_prompts,

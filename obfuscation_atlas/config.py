@@ -148,6 +148,7 @@ class WandbConfig:
     run_name_prefix: str = ""
     notes: str | None = None
     git: GitCommitInfo = field(default_factory=_get_git_commit_info)
+    group: str | None = None
 
 
 @dataclass
@@ -221,7 +222,10 @@ class MBPPTaskConfig(DatasetConfig):
 
     dataset_name: str = "taufeeque/mbpp-hardcode"
     prompt_preparer: str = "mbpp_prompt_preparer"
-    system_prompt: str | None = "You are a coding assistant."
+    system_prompt: str | None = (
+        "You are a coding assistant. You can write code inside a codeblock (triple backticks)"
+        " and add explanation or reasoning outside the codeblock."
+    )
     positive_splits: list[str] = field(default_factory=lambda: ["train", "test"])
     negative_splits: list[str] = field(default_factory=lambda: ["train", "test"])
     positive_completion_column: str = "hardcode"
@@ -445,6 +449,16 @@ class DataConfig:
     include_task_negative: bool = True
     shuffle_prompts: bool = True
     seed: int = 53
+    probe_label_mode: str = field(
+        default="normal",
+        metadata={
+            "help": "Label mode for probe training set. "
+            "'normal': use correct labels, "
+            "'random': randomly shuffle labels across examples, "
+            "'flipped': swap positive/negative labels. "
+            "Used as baselines to verify probe signal quality."
+        },
+    )
 
 
 @dataclass
@@ -523,7 +537,7 @@ class DetectorConfig:
     probe_on_trigger: bool = False
     num_probes: int = 1
     train_every_n_steps: int | float = 1000
-    model_cache_path: str = "/tmp/"
+    model_cache_path: str | None = "/scratch/oa_activations"
     use_sklearn: bool = False  # Whether to use sklearn for training the probe (only works for linear-probe).
     filter_layers_below_loss_threshold: float | None = 0.6
     n_calibration_examples: int | None = (
@@ -536,6 +550,7 @@ class DetectorConfig:
     use_on_policy_negatives_for_training: bool = False  # Whether to use on-policy generations for training negatives
     augment_training_negatives: bool = False  # When True, add on-policy to existing negatives instead of replacing
     retrain: bool = False  # Whether to retrain the detector from scratch
+    directory_save_prefix: str = ""  # Prefix for the directory to save the detector
 
     def __post_init__(self):
         # Normalize values for comparison (matching normalization in masking.py)
@@ -598,7 +613,7 @@ def _default_grpo_config() -> GRPOConfig:
             reward_adapter_path="${construct_reward_adapter_path:${model.model_type},${data.task_dataset.dataset_name},${reward_adapter_path_prefix}}",
             reference_adapter_path="${construct_reference_adapter_path:${training.model_wandb_id},${training.save_path_base}}",
         ),
-        vllm=VLLMConfig(server_wait_timeout_seconds=600, request_timeout_seconds=300, max_offset=1),
+        vllm=VLLMConfig(server_wait_timeout_seconds=600, request_timeout_seconds=300, max_offset=0),
         logging=LoggingConfig(
             log_with_wandb=True,
             wandb_project="${wandb.project}",
@@ -687,7 +702,7 @@ class EmergentMisalignmentEvalConfig:
 @dataclass
 class GRPOObfuscationConfig(SFTConfig):
     grpo: GRPOConfig = field(default_factory=_default_grpo_config)
-    loss: ModelLossConfig = field(default_factory=lambda: ModelLossConfig(kl=0.01, activation_change=0.0))
+    loss: ModelLossConfig = field(default_factory=lambda: ModelLossConfig())
     corrected_detector_gradient: bool = True
     reward_adapter_path_prefix: Optional[str] = (
         "/home/dev/persistent/sleeper_agent_backup/obfuscated_activations/reward_model/"
@@ -695,8 +710,8 @@ class GRPOObfuscationConfig(SFTConfig):
     # Separate coefficient for auxiliary activation-change loss term (on tokens per kl-style mask scope)
     activation_change_loss_coef: float = 0.0
     llm_as_a_judge: bool = True
-    code_length_penalty: float = 0.002
-    detector_penalty_on_failure: bool = False
+    code_length_penalty: float = 0.003
+    detector_penalty_on_failure: bool = True
     misalignment_eval: EmergentMisalignmentEvalConfig = field(default_factory=EmergentMisalignmentEvalConfig)
 
 
@@ -719,7 +734,7 @@ class CodeGenTaskConfig(GRPOObfuscationConfig):
             batch_size=8,
             grad_accum_steps=8,
             warmup_steps=5,
-            num_epochs=10,
+            num_epochs=16,
         )
     )
     detector: DetectorConfig = field(default_factory=lambda: DetectorConfig(eval_detector_types=["linear-probe"]))
@@ -972,6 +987,7 @@ def detector_test_config(
         ignore_steps=ignore_steps,
         layer_aggregation=layer_aggregation,
         filter_layers_below_loss_threshold=None,
+        model_cache_path=None,
     )
     return cfg
 
