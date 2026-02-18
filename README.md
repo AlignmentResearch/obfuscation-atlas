@@ -1,6 +1,12 @@
-# The Obfuscation Atlas: Mapping Where Honesty Emerges in RLVR with Deception Probes
+# The Obfuscation Atlas
 
-This codebase implements methods for training deception probes (linear and nonlinear detectors on model activations) and running RL experiments that train language models against those probes.
+![Obfuscation Atlas Banner](assets/banner.svg)
+
+Official codebase for the paper [**The Obfuscation Atlas: Mapping Where Honesty Emerges in RLVR with Deception Probes**](https://arxiv.org/abs/2602.15515).
+
+This codebase implements methods for training deception probes (linear and nonlinear detectors on model activations) and running RLVR experiments that train language models against those probes.
+
+The 500+ trained models from the paper are available in the [**Hugging Face collection**](https://huggingface.co/collections/AlignmentResearch/the-obfuscation-atlas).
 
 ## Installation
 
@@ -19,7 +25,7 @@ This installs the `afterburner` training framework from `third_party/` and all P
 ```
 obfuscation_atlas/
   config.py             # Hydra-based experiment configuration
-  training/             # Training loops (GRPO, SFT, obfuscation loss)
+  training/             # Training loops (GRPO, obfuscation loss)
   detectors/            # Probe/detector training and evaluation
   tasks/                # Task definitions (emergent misalignment, code gen, etc.)
   utils/                # Shared utilities
@@ -31,13 +37,12 @@ tests/                  # Test suite
 
 ## Configuration
 
-All experiments use [Hydra](https://hydra.cc/) with Python dataclasses for configuration. Override any config value from the command line with `++key.subkey=value`.
+All experiments use [Hydra](https://hydra.cc/) with Python dataclasses for configuration. Override any config value from the command line with `key.subkey=value`.
 
 Key registered configs (defined in `obfuscation_atlas/config.py`):
 
 | Config name | Description |
 |---|---|
-| `sft_config` | SFT training against probes |
 | `grpo_obfuscation_config` | GRPO RL training against probes |
 | `grpo_code_gen` | GRPO for code generation task |
 | `rm_config` | Reward model training |
@@ -109,59 +114,35 @@ CUDA_VISIBLE_DEVICES=1 python -m afterburner.generation.vllm.server \
 
 **2. Launch GRPO training:**
 
-```bash
-# 8B model
-python -m obfuscation_atlas.scripts.train_grpo_model_against_probe \
-    ++detector.eval_detector_types="['linear-probe']"
+We recommend using `model_preset` to automatically configure model-specific parameters like `batch_size`, `num_epochs`, and `model_batch_size` for optimal performance.
 
-# 70B model with FSDP (multi-GPU)
+```bash
+# 8B model (using preset)
+python -m obfuscation_atlas.scripts.train_grpo_model_against_probe \
+    +model_preset=llama3_8b \
+    detector.eval_detector_types="['linear-probe']"
+
+# 70B model with FSDP (multi-GPU, using preset)
 accelerate launch --num_processes 4 --config_file obfuscation_atlas/accelerate_config.yaml \
     -m obfuscation_atlas.scripts.train_grpo_model_against_probe \
-    ++model.model_type=meta-llama/Meta-Llama-3-70B-Instruct \
-    ++training.batch_size=2
+    +model_preset=llama3_70b \
+    detector.eval_detector_types="['linear-probe']"
 ```
 
 **Common GRPO overrides:**
 
-```bash
-++model.model_type=meta-llama/Meta-Llama-3-8B-Instruct
-++training.batch_size=8
-++training.max_steps=3000
-++training.learning_rate=1e-4
-++loss.kl=0.01
-++loss.task=1.0
-++loss.detector=1.0
-++grpo.batching.num_generations=8
-++detector.eval_detector_types="['linear-probe','nonlinear-probe']"
-++detector.train_against_types="['linear-probe']"
-```
-
-### SFT training against probes
-
-SFT (Supervised Fine-Tuning) provides an alternative to RL for training against probes:
+Presets (like `llama3_8b`, `llama3_70b`, `gemma3_27b`, etc.) are the preferred way to set up experiments as they bundle important parameters like `batch_size`, `num_epochs`, and `detector.model_batch_size` (batch size of model for caching activations) to ensure the model runs correctly without crashing on H100 GPUs.
 
 ```bash
-python -m obfuscation_atlas.scripts.train_sft_against_probe \
-    ++detector.eval_detector_types="['linear-probe']" \
-    ++data.include_task_negative=False
-```
-
-**Common SFT overrides:**
-
-```bash
-++model.model_type=meta-llama/Meta-Llama-3-8B-Instruct
-++training.batch_size=8
-++training.max_steps=3000
-++training.learning_rate=3e-4
-++loss.kl=1e-4
-++loss.detector=1.0
-++loss.task=1.0
-```
-
-### Reward model training
-
-```bash
-python -m obfuscation_atlas.scripts.train_reward_model
++model_preset=llama3_8b
+training.max_steps=3000
+training.learning_rate=1e-4
+loss.kl=0.01
+loss.task=1.0
+loss.detector=1.0
+grpo.batching.num_generations=8
+detector.eval_detector_types="['linear-probe','nonlinear-probe']"
+detector.train_against_types="['linear-probe']"
 ```
 
 ## Running Tests
@@ -180,4 +161,14 @@ make format        # Auto-format with ruff
 
 ## Citation
 
-<!-- TODO: Add bibtex -->
+```bibtex
+@misc{taufeeque2026obfuscationatlasmappinghonesty,
+      title={{The Obfuscation Atlas: Mapping Where Honesty Emerges in RLVR with Deception Probes}}, 
+      author={Mohammad Taufeeque and Stefan Heimersheim and Adam Gleave and Chris Cundy},
+      year={2026},
+      eprint={2602.15515},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2602.15515}, 
+}
+```
