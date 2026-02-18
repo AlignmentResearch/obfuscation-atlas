@@ -506,6 +506,7 @@ def train_backdoor(
     skip_loss_scaling=False,
     task_follow_up_prompt: tuple[str, str] | None = None,
     probe_follow_up_prompt: tuple[str, str] | None = None,
+    wandb_group: str | None = None,
 ):
     is_main_process = accelerator is None or accelerator.is_main_process
     lora_model = encoder.model
@@ -530,7 +531,7 @@ def train_backdoor(
         )
 
     # Cache tokenized tensors
-    save_dir = Path(f"/tmp/datasets/{dataset_name}_{model_type}")
+    save_dir = Path(f"/scratch/oa_datasets/{dataset_name}_{model_type}")
     common_args = (encoder.tokenizer, save_dir, truncate_fraction, max_sequence_length)
     # Get processed datasets
     dataset_configs = [
@@ -653,7 +654,7 @@ def train_backdoor(
             "len_task_positive_val": len(task_positive_val) if task_positive_val is not None else 0,
             "len_task_negative_val": len(task_negative_val) if task_negative_val is not None else 0,
         }
-        wandb_run = init_or_update_wandb(wandb_project, wandb_run_name, config, accelerator)
+        wandb_run = init_or_update_wandb(wandb_project, wandb_run_name, config, accelerator, group=wandb_group)
 
     t_forward = 0.0
     t_backward = 0.0

@@ -44,7 +44,7 @@ class LanguageModelWrapper:
         padding_side="right",
         append_eos_to_targets=True,
         create_rank_dirs=False,
-        flush_every_n_batches=None,
+        flush_every_n_batches=10,
         completion_column="completion",
         follow_up_prompts: list[tuple[str, str]] = [],
         labels: torch.Tensor | None = None,
@@ -300,7 +300,12 @@ class LanguageModelWrapper:
                 rank_example_types.append(batch_example_types.cpu())
             batch_idx += 1
 
-            if use_memmap and flush_every_n_batches and batch_idx % flush_every_n_batches == 0:
+            if (
+                not store_last_token_only
+                and use_memmap
+                and flush_every_n_batches
+                and batch_idx % flush_every_n_batches == 0
+            ):
                 for layer in layers_to_return:
                     del layer_mmaps[layer]
                     layer_mmaps[layer] = MemoryMappedTensor.from_filename(

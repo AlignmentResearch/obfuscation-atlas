@@ -2803,17 +2803,17 @@ def train_detector(
         )
 
     # Debug: Log potentially mislabeled examples
-    try:
-        log_potentially_mislabeled_examples(
-            detector=detector,
-            feature_dataset=train_feature_dataset,
-            train_dataset=train_dataset,
-            eval_sequence_aggregator=eval_sequence_aggregator,
-            top_k=5,
-            accelerator=accelerator,
-        )
-    except Exception as e:
-        print(f"Warning: Could not log potentially mislabeled examples: {e}")
+    # try:
+    #     log_potentially_mislabeled_examples(
+    #         detector=detector,
+    #         feature_dataset=train_feature_dataset,
+    #         train_dataset=train_dataset,
+    #         eval_sequence_aggregator=eval_sequence_aggregator,
+    #         top_k=5,
+    #         accelerator=accelerator,
+    #     )
+    # except Exception as e:
+    #     print(f"Warning: Could not log potentially mislabeled examples: {e}")
     if accelerator is not None:
         accelerator.wait_for_everyone()
 

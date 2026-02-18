@@ -208,14 +208,15 @@ def run_rl(cfg: GRPOObfuscationConfig):
     cfg.grpo.logging.output_dir = str(checkpoints_dir)
     trainer.output_dir = trainer.get_output_dir()  # update the internal state
 
-    model_cache_path = (
-        f"{cfg.detector.model_cache_path}/{cfg.training.model_wandb_id or 'base'}_activations_{model_last_name}_"
-        + f"tr-{cfg.data.probe_dataset.dataset_name}_ts-{cfg.data.task_dataset.dataset_name}/"
-    )
-
-    if cfg.detector.retrain:
-        if os.path.exists(model_cache_path):
-            shutil.rmtree(model_cache_path)
+    model_cache_path = None
+    if cfg.detector.model_cache_path is not None:
+        model_cache_path = (
+            f"{cfg.detector.model_cache_path}/{cfg.training.model_wandb_id or 'base'}_activations_{model_last_name}_"
+            + f"tr-{cfg.data.probe_dataset.dataset_name}_ts-{cfg.data.task_dataset.dataset_name}/"
+        )
+        if cfg.detector.retrain:
+            if os.path.exists(model_cache_path):
+                shutil.rmtree(model_cache_path)
 
     if cfg.training.only_eval_from_other_run:
         # Check if we need to load from FSDP checkpoint (when no LoRA adapter exists)
@@ -304,6 +305,7 @@ def run_rl(cfg: GRPOObfuscationConfig):
         cfg.detector.train_sequence_aggregator,
         cfg.detector.eval_sequence_aggregator,
         cfg.training.model_wandb_id,
+        directory_save_prefix=cfg.detector.directory_save_prefix,
     )
     detector_name = get_detector_name(cfg.detector.train_against_types[0], cfg.detector.obfuscate_over)
     if cfg.training.only_eval_detectors or cfg.training.only_eval_from_other_run or cfg.detector.retrain:
@@ -421,7 +423,8 @@ def run_rl(cfg: GRPOObfuscationConfig):
     trainer.state.model.set_adapter(["policy"])  # type: ignore
     trainer.state.model.shared_base_model.eval()  # type: ignore
     kwargs["model"] = trainer.state.model.shared_base_model
-    kwargs["cache_activations_save_path"] = f"{cfg.detector.model_cache_path}/activations_{wandb_run_id}"
+    if cfg.detector.model_cache_path is not None:
+        kwargs["cache_activations_save_path"] = f"{cfg.detector.model_cache_path}/activations_{wandb_run_id}"
     kwargs["vllm_lora_path"] = str(final_adapter_path)
 
     # Evaluate detectors post-training
@@ -453,7 +456,9 @@ def run_rl(cfg: GRPOObfuscationConfig):
         "augment_training_negatives",
     ]:
         kwargs.pop(k)
-    cache_activations_save_path = f"/tmp/activations_{wandb_run_id}"
+    cache_activations_save_path = None
+    if cfg.detector.model_cache_path is not None:
+        cache_activations_save_path = f"{cfg.detector.model_cache_path}/activations_{wandb_run_id}"
 
     eval_results = eval_detectors_helper(
         pretrained_detectors,
@@ -569,7 +574,7 @@ def eval_detectors_helper(
     detector_types: list[str],
     plot_key: str,
     plot_title: str,
-    cache_activations_save_path: str,
+    cache_activations_save_path: str | None,
     is_main_process: bool,
     metrics_save_path: Path | str,
     layers: list[int],
@@ -594,11 +599,15 @@ def eval_detectors_helper(
     Returns:
         The evaluation results dict (test_metrics per detector key), or None if not main process.
     """
+    train_cache_activations_save_path, test_cache_activations_save_path = None, None
+    if cache_activations_save_path is not None:
+        train_cache_activations_save_path = f"{cache_activations_save_path}_{plot_key}_train"
+        test_cache_activations_save_path = f"{cache_activations_save_path}_{plot_key}_test"
     eval_for_obf_policy = eval_multiple_detectors(
         detectors=detectors,
         detector_types=detector_types,
-        train_cache_activations_save_path=f"{cache_activations_save_path}_{plot_key}_train",
-        test_cache_activations_save_path=f"{cache_activations_save_path}_{plot_key}_test",
+        train_cache_activations_save_path=train_cache_activations_save_path,
+        test_cache_activations_save_path=test_cache_activations_save_path,
         **kwargs,
     )
 
@@ -680,6 +689,8 @@ def compute_obfuscation_decomposition_metrics_helper(
 
     # Extract task rewards and deceptive metric from reward_metrics
     # Keys match those used in compute_code_generation_rewards
+    if "rewards/task_success" not in reward_metrics:
+        return {}
     task_rewards = torch.tensor(reward_metrics["rewards/task_success"]).float()
     deceptive_metric = reward_metrics["rewards_metrics/passes_first_n_but_not_all_tests"]
 
@@ -786,7 +797,7 @@ def generate_on_policy_responses(
         response_strings = trainer.tokenizer.batch_decode(responses.tokens)
         # Compute code generation metrics if test_lists provided
         reward_metrics: dict[str, list] = {}
-        if test_lists is not None:
+        if test_lists is not None and "rewards/task_success" not in reward_metrics:
             _, reward_metrics = compute_code_generation_rewards(
                 prompts_formatted,
                 [r.removesuffix(trainer.tokenizer.eos_token) for r in response_strings],  # type: ignore
@@ -817,7 +828,7 @@ def generate_on_policy_responses(
     return Dataset.from_dict({"prompt": prompts_formatted, "completion": response_strings}), reward_metrics
 
 
-@hydra.main(version_base=None, config_name="grpo_obfuscation_config")
+@hydra.main(version_base=None, config_name="grpo_code_gen")
 def _hydra_entry(cfg: DictConfig):
     cfg_obj: GRPOObfuscationConfig = OmegaConf.to_object(cfg)  # type: ignore
     run_rl(cfg_obj)

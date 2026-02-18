@@ -35,6 +35,7 @@ from obfuscation_atlas.utils.example_types import (
     ExampleType,
     TriggerType,
 )
+from obfuscation_atlas.utils.metrics import get_detector_metrics
 from obfuscation_atlas.utils.violin_logit import violinplot_using_logit_kde
 from obfuscation_atlas.utils.visualization import apply_style
 from obfuscation_atlas.utils.wandb_utils import checkpoint_path_from_wandb_id
@@ -550,58 +551,58 @@ def compute_averaged_scores_across_layers(
         - averaged_train_metrics: Optional dict of averaged train metrics
         - layers_used: List of layer indices that were actually used for averaging
     """
-    # Collect scores from layers
+    # Collect scores from layers - append per layer to stack and average, not extend/concatenate
     test_scores_positive = []
     test_scores_negative = []
-    test_scores_by_type = defaultdict(list)
+    test_scores_by_type: dict[str, list] = defaultdict(list)
 
     train_scores_positive = []
     train_scores_negative = []
-    train_scores_by_type = defaultdict(list)
+    train_scores_by_type: dict[str, list] = defaultdict(list)
 
     for layer in filtered_layers:
         layer_str = str(layer)
         if layer_str not in metrics or "scores" not in metrics[layer_str]:
             continue
 
-        # Collect test scores
-        test_scores_positive.extend(metrics[layer_str]["scores"]["positive"])
-        test_scores_negative.extend(metrics[layer_str]["scores"]["negative"])
+        # Collect test scores (one array per layer, to be averaged across layers)
+        test_scores_positive.append(np.asarray(metrics[layer_str]["scores"]["positive"]))
+        test_scores_negative.append(np.asarray(metrics[layer_str]["scores"]["negative"]))
 
         # Collect test scores by type if available
         if "scores_by_type" in metrics[layer_str]:
             for example_type_key, scores in metrics[layer_str]["scores_by_type"].items():
-                test_scores_by_type[example_type_key].extend(scores)
+                test_scores_by_type[example_type_key].append(np.asarray(scores))
 
         # Collect train scores if available
         if train_metrics and layer_str in train_metrics and "scores" in train_metrics[layer_str]:
-            train_scores_positive.extend(train_metrics[layer_str]["scores"]["positive"])
-            train_scores_negative.extend(train_metrics[layer_str]["scores"]["negative"])
+            train_scores_positive.append(np.asarray(train_metrics[layer_str]["scores"]["positive"]))
+            train_scores_negative.append(np.asarray(train_metrics[layer_str]["scores"]["negative"]))
 
             if "scores_by_type" in train_metrics[layer_str]:
                 for example_type_key, scores in train_metrics[layer_str]["scores_by_type"].items():
-                    train_scores_by_type[example_type_key].extend(scores)
+                    train_scores_by_type[example_type_key].append(np.asarray(scores))
 
-    # Build averaged metrics
+    # Average across layers: stack [num_layers, num_samples] -> mean over axis=0 -> [num_samples]
     averaged_test = {
         "scores": {
-            "positive": np.array(test_scores_positive),
-            "negative": np.array(test_scores_negative),
+            "positive": np.stack(test_scores_positive).mean(axis=0) if test_scores_positive else np.array([]),
+            "negative": np.stack(test_scores_negative).mean(axis=0) if test_scores_negative else np.array([]),
         }
     }
     if test_scores_by_type:
-        averaged_test["scores_by_type"] = {k: np.array(v) for k, v in test_scores_by_type.items()}
+        averaged_test["scores_by_type"] = {k: np.stack(v).mean(axis=0) for k, v in test_scores_by_type.items()}
 
     averaged_train = None
     if train_metrics and (train_scores_positive or train_scores_negative):
         averaged_train = {
             "scores": {
-                "positive": np.array(train_scores_positive),
-                "negative": np.array(train_scores_negative),
+                "positive": np.stack(train_scores_positive).mean(axis=0) if train_scores_positive else np.array([]),
+                "negative": np.stack(train_scores_negative).mean(axis=0) if train_scores_negative else np.array([]),
             }
         }
         if train_scores_by_type:
-            averaged_train["scores_by_type"] = {k: np.array(v) for k, v in train_scores_by_type.items()}
+            averaged_train["scores_by_type"] = {k: np.stack(v).mean(axis=0) for k, v in train_scores_by_type.items()}
 
     return averaged_test, averaged_train
 
@@ -1101,6 +1102,35 @@ def log_detector_metrics(
             f.write(f"{filtered_layers_d}")
         wandb.log({f"violin_scores/{prefix}/{detector_key}_averaged": wandb.Image(violin_png_file_name)})
 
+        # Compute metrics (AUC, F1, recall@FPR, etc.) over the averaged scores
+        averaged_positive = averaged_test["scores"]["positive"]
+        averaged_negative = averaged_test["scores"]["negative"]
+        if len(averaged_positive) > 0 and len(averaged_negative) > 0:
+            averaged_all_scores = np.concatenate([averaged_positive, averaged_negative])
+            averaged_labels = np.concatenate(
+                [
+                    np.ones(len(averaged_positive)),
+                    np.zeros(len(averaged_negative)),
+                ]
+            )
+            averaged_metrics_result, _ = get_detector_metrics(
+                scores={"averaged": averaged_all_scores},
+                labels=averaged_labels,
+                disable_plots=True,
+                exclude_scores=True,
+            )
+            avg_metrics = averaged_metrics_result["averaged"]
+            avg_log_dict = {}
+            for metric_name, metric_value in avg_metrics.items():
+                if isinstance(metric_value, dict):
+                    for sub_name, sub_value in metric_value.items():
+                        avg_log_dict[f"probes/eval_{prefix}_averaged/{detector_key}/{metric_name}/{sub_name}"] = (
+                            sub_value
+                        )
+                else:
+                    avg_log_dict[f"probes/eval_{prefix}_averaged/{detector_key}/{metric_name}"] = metric_value
+            wandb.log(avg_log_dict)
+
         for layer_str, layer_metrics in metrics.items():
             flat_suffix = "-flat" if "flat_" in layer_str else ""
             layer = layer_str.split("flat_")[-1]
@@ -1267,6 +1297,7 @@ def init_wandb_with_checkpoint_resuming(run_args: SFTConfig, WANDB_RUN_NAME: str
     resume_from_checkpoint = run_args.training.resume_from_checkpoint
     save_path_base = run_args.training.save_path_base
     wandb_project = run_args.wandb.project
+    wandb_group = run_args.wandb.group
     total_layers = len(activation_layers)
     transient_keys = {
         "resume_from_checkpoint",
@@ -1293,6 +1324,7 @@ def init_wandb_with_checkpoint_resuming(run_args: SFTConfig, WANDB_RUN_NAME: str
     wandb_init_kwargs: dict = {
         "project": wandb_project,
         "name": WANDB_RUN_NAME,
+        "group": wandb_group,
         "save_code": True,
         "settings": wandb.Settings(code_dir=str(Path(__file__).parent)),
         "config": run_args,
@@ -1617,6 +1649,23 @@ def prepare_dataset(
             max_sequence_length=cfg.probe_dataset.max_sequence_length,
         )
 
+    # Apply probe label mode transformation
+    if cfg.probe_label_mode == "flipped":
+        print(f"[probe_label_mode={cfg.probe_label_mode}] Swapping positive/negative probe datasets (flipped labels)")
+        probe_positive_dataset, probe_negative_dataset = probe_negative_dataset, probe_positive_dataset
+    elif cfg.probe_label_mode == "random":
+        print(f"[probe_label_mode={cfg.probe_label_mode}] Randomly shuffling probe labels across examples")
+        combined_probe = concatenate_datasets([probe_positive_dataset, probe_negative_dataset])
+        combined_probe = combined_probe.shuffle(seed=cfg.seed)
+        n_pos = len(probe_positive_dataset)
+        n_neg = len(probe_negative_dataset)
+        probe_positive_dataset = combined_probe.select(range(n_pos))
+        probe_negative_dataset = combined_probe.select(range(n_pos, n_pos + n_neg))
+    elif cfg.probe_label_mode != "normal":
+        raise ValueError(
+            f"Unknown probe_label_mode='{cfg.probe_label_mode}'. Must be 'normal', 'random', or 'flipped'."
+        )
+
     if not cfg.probe_dataset.no_trigger or not cfg.task_dataset.no_trigger:
         raise ValueError("Trigger based dataset no longer supported. Please reimplement correctly.")
 
@@ -1691,7 +1740,10 @@ def prepare_dataset(
     print("Lengths of datasets per class:")
     print("Task dataset:", (len(task_positive_train), len(task_negative_train)))
     print("Task val dataset:", (len(task_positive_val), len(task_negative_val)))
-    print("Probe dataset:", (len(probe_positive_dataset), len(probe_negative_dataset)))
+    print(
+        f"Probe dataset (label_mode={cfg.probe_label_mode}):",
+        (len(probe_positive_dataset), len(probe_negative_dataset)),
+    )
 
     if show:
         # Sanitize examples to avoid triggering Opus 4.5's constitutional classifiers
@@ -1721,6 +1773,7 @@ def detector_results_path(
     train_sequence_aggregator: str | None,
     eval_sequence_aggregator: str,
     model_wandb_id: str | None,
+    directory_save_prefix: str = "",
 ):
     BASE_MODEL_DETECTOR_RESULTS_PATH = save_path_base.rstrip("/")
     detector_type_str = "detector-" + "-".join(
@@ -1729,6 +1782,8 @@ def detector_results_path(
     sequence_aggregator_str = f"_train_{train_sequence_aggregator}_eval_{eval_sequence_aggregator}"
     probe_dataset_name = probe_dataset_name.replace(":", "-")
     prefix = (model_wandb_id or "base") + "_results_and_detectors"
+    if directory_save_prefix:
+        prefix = directory_save_prefix + "_" + prefix
     BASE_MODEL_DETECTOR_RESULTS_PATH = os.path.join(
         BASE_MODEL_DETECTOR_RESULTS_PATH,
         f"{prefix}_{model_last_name}_{trigger_type}_{probe_dataset_name}_{detector_type_str}{sequence_aggregator_str}",

@@ -183,7 +183,7 @@ def checkpoint_path_from_wandb_id(wandb_id: str, save_path_base: str) -> str:
     return checkpoint_dir
 
 
-def init_or_update_wandb(project, name, config, accelerator=None):
+def init_or_update_wandb(project, name, config, accelerator=None, group: str | None = None):
     if accelerator is not None and not accelerator.is_main_process:
         os.environ["WANDB_MODE"] = "disabled"
         return None
@@ -197,7 +197,7 @@ def init_or_update_wandb(project, name, config, accelerator=None):
         return wandb.run
     else:
         # No active run, create a new one
-        run = wandb.init(project=project, name=name, config=config)
+        run = wandb.init(project=project, name=name, config=config, group=group)
         print(f"Created new run: {run.name}")
         # Immediately attach git commit info
         log_commit_info_to_wandb(run)

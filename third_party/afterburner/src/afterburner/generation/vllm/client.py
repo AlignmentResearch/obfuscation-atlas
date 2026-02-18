@@ -153,6 +153,59 @@ class VLLMClient:
 
         return self.broadcast_responses(choices)
 
+    def generate_chat_completions(
+        self,
+        conversations: list[list[dict[str, str]]],
+        max_tokens: int,
+        n: int,
+        lora_path: Path,
+        is_main_process: bool,
+        prefill: str | list[str] | None = None,
+        seed: int | None = None,
+        stop_token_ids: list[int] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Generate chat completions with batching support. Needs to be called from every process.
+
+        Chat template is applied server-side, so no client-side tokenization is needed.
+
+        Args:
+            conversations: List of conversations, each a list of message dicts with 'role' and 'content'.
+            max_tokens: Maximum tokens to generate per completion.
+            n: Number of completions per conversation.
+            lora_path: Path to LoRA adapter.
+            is_main_process: Whether this is the main process.
+            prefill: Optional prefill text. A single string is applied to all conversations,
+                or a list of strings (one per conversation).
+            seed: Random seed for reproducibility.
+            stop_token_ids: Token IDs that stop generation.
+
+        Returns:
+            List of choice dicts with 'text', 'token_ids', 'logprobs', 'conversation_index', 'message'.
+        """
+        if is_main_process:
+            data: dict[str, Any] = {
+                "messages": conversations,
+                "max_tokens": max_tokens,
+                "temperature": self.config.temperature,
+                "n": n,
+                "lora_path": str(lora_path),
+                "include_stop_str_in_output": True,
+                "skip_special_tokens": False,
+            }
+            if prefill is not None:
+                data["prefill"] = prefill
+            if seed is not None:
+                data["seed"] = seed
+            if stop_token_ids is not None:
+                data["stop_token_ids"] = stop_token_ids
+
+            response = self.request("v1/chat/completions", data)
+            choices = response["choices"]
+        else:
+            choices = [{}] * len(conversations) * n
+
+        return choices
+
     def get_prompt_logprobs(
         self,
         prompts: list[list[int]],
